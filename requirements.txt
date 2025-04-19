@@ -1,0 +1,7 @@
+streamlit
+pandas
+schedule
+datetime
+threading
+random
+requests
