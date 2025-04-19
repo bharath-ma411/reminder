@@ -9,6 +9,9 @@ import requests
 from datetime import datetime, timedelta
 import pytz
 
+# Global storage for reminders that can be accessed by the background thread
+global_reminders = {}
+
 # Set page config
 st.set_page_config(
     page_title="Mom-to-Be Reminder App",
@@ -159,7 +162,8 @@ def verify_telegram_chat_id(chat_id):
 
 # Function to execute a scheduled reminder
 def execute_reminder(reminder_id):
-    reminder = next((r for r in st.session_state.reminders if r['id'] == reminder_id), None)
+    # Use the global reminders dictionary instead of session state
+    reminder = global_reminders.get(reminder_id)
     
     if reminder and reminder['active']:
         # Generate the message
@@ -172,7 +176,7 @@ def execute_reminder(reminder_id):
         # Send the message
         success, _ = send_telegram_message(reminder['receiver_chat_id'], message)
         
-        # Log the execution (in a real app, you'd want to store this)
+        # Log the execution
         now = datetime.now(ist)
         print(f"Reminder {reminder_id} executed at {now.strftime('%Y-%m-%d %H:%M:%S')} IST - Success: {success}")
 
@@ -189,6 +193,11 @@ def delete_reminder(reminder_id):
         
         # Remove the reminder from the list
         st.session_state.reminders.pop(reminder_index)
+        
+        # Also remove from global reminders
+        if reminder_id in global_reminders:
+            del global_reminders[reminder_id]
+            
         return True
     
     return False
@@ -269,26 +278,22 @@ with st.form(key="reminder_form"):
         )
         
         if frequency == "Daily":
-            # Use IST as default time
-            default_time = datetime.now(ist).time()
+            # No default time - user must select a time
             selected_time = st.time_input("Time of Day (IST)")
         elif frequency == "Weekly":
             day_of_week = st.selectbox(
                 "Day of Week",
                 ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
             )
-            # Use IST as default time
-            default_time = datetime.now(ist).time()
+            # No default time
             selected_time = st.time_input("Time of Day (IST)")
         elif frequency == "Monthly":
             day_of_month = st.number_input("Day of Month", min_value=1, max_value=31, value=1)
-            # Use IST as default time
-            default_time = datetime.now(ist).time()
+            # No default time
             selected_time = st.time_input("Time of Day (IST)")
         else:  # One-time
             date = st.date_input("Date", min_value=datetime.now(ist).date())
-            # Use IST as default time
-            default_time = datetime.now(ist).time()
+            # No default time
             selected_time = st.time_input("Time (IST)")
     
     submit_button = st.form_submit_button(label="Add Medication Reminder")
@@ -402,6 +407,9 @@ if submit_button:
         
         # Add the reminder to the session state
         st.session_state.reminders.append(reminder)
+        
+        # Also add to global reminders for background thread access
+        global_reminders[reminder_id] = reminder
         
         # Show success message with preview
         st.success(f"Medication reminder added successfully! Will send at {selected_time.strftime('%I:%M %p')} IST.")
