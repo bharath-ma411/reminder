@@ -1,6 +1,6 @@
 streamlit
 pandas
-schedule
+schedule==1.2.2
 datetime
 threading
 random
