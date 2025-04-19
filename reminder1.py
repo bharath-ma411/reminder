@@ -483,7 +483,7 @@ if st.session_state.reminders:
         if delete_button:
             if delete_reminder(delete_reminder_id):
                 st.success(f"Reminder ID {delete_reminder_id} has been deleted successfully!")
-                st.experimental_rerun()  # Refresh the page to reflect changes
+                st.rerun()  # Refresh the page to reflect changes
             else:
                 st.error("Failed to delete the reminder. Please try again.")
 else:
