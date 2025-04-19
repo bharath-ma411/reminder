@@ -7,6 +7,7 @@ import schedule
 import threading
 import requests
 from datetime import datetime, timedelta
+import pytz
 
 # Set page config
 st.set_page_config(
@@ -21,6 +22,10 @@ st.markdown("""
 This app allows you to schedule friendly medication reminders for expectant mothers. 
 The app generates supportive and encouraging messages via Telegram.
 """)
+
+# Set timezone to IST
+ist = pytz.timezone('Asia/Kolkata')
+system_tz = datetime.now().astimezone().tzinfo
 
 # Initialize session state variables if they don't exist
 if 'reminders' not in st.session_state:
@@ -168,8 +173,8 @@ def execute_reminder(reminder_id):
         success, _ = send_telegram_message(reminder['receiver_chat_id'], message)
         
         # Log the execution (in a real app, you'd want to store this)
-        now = datetime.now()
-        print(f"Reminder {reminder_id} executed at {now.strftime('%Y-%m-%d %H:%M:%S')} - Success: {success}")
+        now = datetime.now(ist)
+        print(f"Reminder {reminder_id} executed at {now.strftime('%Y-%m-%d %H:%M:%S')} IST - Success: {success}")
 
 # Function to delete a reminder
 def delete_reminder(reminder_id):
@@ -187,6 +192,20 @@ def delete_reminder(reminder_id):
         return True
     
     return False
+
+# Function to convert IST time to system time for scheduling
+def convert_ist_to_system_time(ist_time):
+    # Create a datetime with today's date and the given IST time
+    ist_naive = datetime.combine(datetime.now().date(), ist_time)
+    
+    # Localize to IST
+    ist_dt = ist.localize(ist_naive)
+    
+    # Convert to system timezone
+    system_dt = ist_dt.astimezone(system_tz)
+    
+    # Return just the time portion
+    return system_dt.time()
 
 # Function for the scheduler to run
 def run_scheduled_jobs():
@@ -211,7 +230,7 @@ with col2:
     receiver_name = st.text_input("Mom-to-Be Name", key="receiver_name")
     receiver_chat_id = st.text_input("Telegram Chat ID", 
                                      help="The recipient must start a conversation with your bot first. You can find their Chat ID using @userinfobot on Telegram.")
-    due_date = st.date_input("Expected Due Date", min_value=datetime.now().date())
+    due_date = st.date_input("Expected Due Date", min_value=datetime.now(ist).date())
 
     # Verify Chat ID button
     if st.button("Verify Chat ID"):
@@ -228,6 +247,9 @@ with col2:
                     st.success(f"Valid Chat ID! User: {first_name} (@{username})")
                 else:
                     st.error(f"Invalid Chat ID: {result}")
+
+# Display IST time note
+st.info(f"Current IST time: {datetime.now(ist).strftime('%Y-%m-%d %H:%M:%S')}. All reminders will be scheduled in IST.")
 
 # Create reminder form
 st.subheader("Add a New Medication Reminder")
@@ -247,27 +269,27 @@ with st.form(key="reminder_form"):
         )
         
         if frequency == "Daily":
-            # Fix for time scheduling - store the time directly
-            selected_time = st.time_input("Time of Day", value=datetime.now().time())
-            time_str = selected_time.strftime('%H:%M')
+            # Use IST as default time
+            default_time = datetime.now(ist).time()
+            selected_time = st.time_input("Time of Day (IST)")
         elif frequency == "Weekly":
             day_of_week = st.selectbox(
                 "Day of Week",
                 ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
             )
-            # Fix for time scheduling - store the time directly
-            selected_time = st.time_input("Time of Day", value=datetime.now().time())
-            time_str = selected_time.strftime('%H:%M')
+            # Use IST as default time
+            default_time = datetime.now(ist).time()
+            selected_time = st.time_input("Time of Day (IST)")
         elif frequency == "Monthly":
             day_of_month = st.number_input("Day of Month", min_value=1, max_value=31, value=1)
-            # Fix for time scheduling - store the time directly
-            selected_time = st.time_input("Time of Day", value=datetime.now().time())
-            time_str = selected_time.strftime('%H:%M')
+            # Use IST as default time
+            default_time = datetime.now(ist).time()
+            selected_time = st.time_input("Time of Day (IST)")
         else:  # One-time
-            date = st.date_input("Date", min_value=datetime.now().date())
-            # Fix for time scheduling - store the time directly
-            selected_time = st.time_input("Time", value=datetime.now().time())
-            time_str = selected_time.strftime('%H:%M')
+            date = st.date_input("Date", min_value=datetime.now(ist).date())
+            # Use IST as default time
+            default_time = datetime.now(ist).time()
+            selected_time = st.time_input("Time (IST)")
     
     submit_button = st.form_submit_button(label="Add Medication Reminder")
 
@@ -281,20 +303,24 @@ if submit_button:
         # Create a unique reminder ID
         reminder_id = len(st.session_state.reminders)
         
-        # Format the schedule information for display
+        # Convert the selected IST time to system timezone for scheduling
+        system_time = convert_ist_to_system_time(selected_time)
+        time_str = system_time.strftime('%H:%M')
+        
+        # Format the schedule information for display using the IST time
         if frequency == "Daily":
-            schedule_display = f"Daily at {selected_time.strftime('%I:%M %p')}"
-            schedule_key = f"daily-{time_str}"
+            schedule_display = f"Daily at {selected_time.strftime('%I:%M %p')} IST"
+            schedule_key = f"daily-{selected_time.strftime('%H:%M')}"
             
-            # Schedule the job using the selected time
+            # Schedule the job using the system time
             job = schedule.every().day.at(time_str).do(execute_reminder, reminder_id)
             st.session_state.scheduled_jobs[reminder_id] = job
             
         elif frequency == "Weekly":
-            schedule_display = f"Every {day_of_week} at {selected_time.strftime('%I:%M %p')}"
-            schedule_key = f"weekly-{day_of_week}-{time_str}"
+            schedule_display = f"Every {day_of_week} at {selected_time.strftime('%I:%M %p')} IST"
+            schedule_key = f"weekly-{day_of_week}-{selected_time.strftime('%H:%M')}"
             
-            # Schedule the job using the selected time
+            # Schedule the job using the system time
             if day_of_week == "Monday":
                 job = schedule.every().monday.at(time_str).do(execute_reminder, reminder_id)
             elif day_of_week == "Tuesday":
@@ -313,35 +339,44 @@ if submit_button:
             st.session_state.scheduled_jobs[reminder_id] = job
             
         elif frequency == "Monthly":
-            schedule_display = f"Monthly on day {day_of_month} at {selected_time.strftime('%I:%M %p')}"
-            schedule_key = f"monthly-{day_of_month}-{time_str}"
+            schedule_display = f"Monthly on day {day_of_month} at {selected_time.strftime('%I:%M %p')} IST"
+            schedule_key = f"monthly-{day_of_month}-{selected_time.strftime('%H:%M')}"
             
-            # For monthly jobs, use the selected time
+            # For monthly jobs, use the system time
             job = schedule.every().day.at(time_str).do(
-                lambda: execute_reminder(reminder_id) if datetime.now().day == day_of_month else None
+                lambda: execute_reminder(reminder_id) if datetime.now(ist).day == day_of_month else None
             )
             st.session_state.scheduled_jobs[reminder_id] = job
             
         else:  # One-time
-            schedule_display = f"Once on {date.strftime('%b %d, %Y')} at {selected_time.strftime('%I:%M %p')}"
-            schedule_key = f"once-{date.strftime('%Y-%m-%d')}-{time_str}"
+            schedule_display = f"Once on {date.strftime('%b %d, %Y')} at {selected_time.strftime('%I:%M %p')} IST"
+            schedule_key = f"once-{date.strftime('%Y-%m-%d')}-{selected_time.strftime('%H:%M')}"
             
             # For one-time jobs, we'll need a more complex approach
-            # Check if the scheduled date/time has passed
-            # FIX: Properly combine date and selected_time
-            scheduled_datetime = datetime.combine(date, selected_time)
+            # Create a datetime object in IST timezone
+            naive_datetime = datetime.combine(date, selected_time)
+            scheduled_datetime_ist = ist.localize(naive_datetime)
             
-            if scheduled_datetime <= datetime.now():
+            # Convert to system timezone for comparison with system now
+            scheduled_datetime_system = scheduled_datetime_ist.astimezone(system_tz)
+            
+            # Get current time in system timezone
+            current_time_system = datetime.now(system_tz)
+            
+            if scheduled_datetime_system <= current_time_system:
                 st.error("The scheduled time has already passed.")
             else:
                 # Calculate seconds until the scheduled time
-                delta = (scheduled_datetime - datetime.now()).total_seconds()
+                delta = (scheduled_datetime_system - current_time_system).total_seconds()
                 
                 # Schedule a job to run once after the delay
                 job = schedule.every(int(delta)).seconds.do(
                     lambda: (execute_reminder(reminder_id), schedule.cancel_job(st.session_state.scheduled_jobs[reminder_id]))
                 )
                 st.session_state.scheduled_jobs[reminder_id] = job
+        
+        # Store the IST time for reference
+        ist_time_str = selected_time.strftime('%H:%M')
         
         # Create the reminder object
         reminder = {
@@ -355,10 +390,11 @@ if submit_button:
             "receiver_name": receiver_name,
             "receiver_chat_id": receiver_chat_id,
             "active": True,
-            # Store the time details correctly
-            "selected_time": time_str,
+            # Store both IST and system time for reference
+            "selected_time_ist": ist_time_str,
+            "selected_time_system": time_str,
             # For one-time reminders, store the full datetime
-            "scheduled_datetime": scheduled_datetime.isoformat() if frequency == "One-time" else None
+            "scheduled_datetime_ist": scheduled_datetime_ist.isoformat() if frequency == "One-time" else None
         }
         
         # Generate a sample message for preview
@@ -368,7 +404,7 @@ if submit_button:
         st.session_state.reminders.append(reminder)
         
         # Show success message with preview
-        st.success("Medication reminder added successfully!")
+        st.success(f"Medication reminder added successfully! Will send at {selected_time.strftime('%I:%M %p')} IST.")
         with st.expander("Preview Message", expanded=True):
             st.markdown(f"**Sample message that will be sent:**\n\n{sample_message}")
 
