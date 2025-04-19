@@ -279,7 +279,7 @@ with st.form(key="reminder_form"):
         
         if frequency == "Daily":
             # No default time - user must select a time
-            selected_time = st.time_input("Time of Day (IST)")
+            selected_time = st.time_input("Time of Day (IST)", step=timedelta(minutes=1))
         elif frequency == "Weekly":
             day_of_week = st.selectbox(
                 "Day of Week",
